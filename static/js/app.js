@@ -213,6 +213,91 @@ function loadLocalQueries() {
   });
 }
 
+// Saved queries are stored in the browser, unlike local queries that are
+// served from the queries directory on the pgweb host.
+function getSavedQueries() {
+  try {
+    return JSON.parse(localStorage.getItem("saved_queries")) || [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function setSavedQueries(queries) {
+  localStorage.setItem("saved_queries", JSON.stringify(queries));
+  renderSavedQueries();
+}
+
+function renderSavedQueries() {
+  var queries = getSavedQueries();
+  var container = $("#saved-query-dropdown").find(".dropdown-menu");
+
+  container.html("");
+
+  queries.forEach(function(item, idx) {
+    var link = $("<a href='#' class='saved-query'></a>").attr("data-id", idx).text(item.name);
+    $("<i class='fa fa-times delete-saved-query' title='Delete query'></i>").appendTo(link);
+    $("<li></li>").append(link).appendTo(container);
+  });
+
+  $("#saved-query-dropdown").toggle(queries.length > 0);
+}
+
+function saveCurrentQuery() {
+  // Save the exact selection if user has one, the whole editor otherwise
+  var query = $.trim(editor.getSelectedText()) || $.trim(editor.getValue());
+
+  if (query.length == 0) {
+    alert("Please enter a query first!");
+    return;
+  }
+
+  var name = prompt("Save query as:");
+  if (name == null) return;
+
+  name = $.trim(name);
+  if (name.length == 0) return;
+
+  var queries = getSavedQueries();
+  var existing = -1;
+
+  queries.forEach(function(item, idx) {
+    if (item.name.toLowerCase() == name.toLowerCase()) existing = idx;
+  });
+
+  if (existing >= 0) {
+    if (!confirm('Query "' + queries[existing].name + '" already exists. Overwrite it?')) return;
+    queries[existing].query = query;
+  } else {
+    queries.push({ name: name, query: query });
+    queries.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  }
+
+  setSavedQueries(queries);
+}
+
+function loadSavedQuery(id) {
+  var item = getSavedQueries()[id];
+  if (!item) return;
+
+  setCurrentTab("table_query");
+
+  editor.setValue(item.query);
+  editor.clearSelection();
+  editor.focus();
+}
+
+function deleteSavedQuery(id) {
+  var queries = getSavedQueries();
+  var item = queries[id];
+
+  if (!item) return;
+  if (!confirm('Delete saved query "' + item.name + '"?')) return;
+
+  queries.splice(id, 1);
+  setSavedQueries(queries);
+}
+
 function loadSchemas() {
   $("#objects").html("");
 
@@ -797,13 +882,13 @@ function showActivityPanel() {
 }
 
 function showQueryProgressMessage() {
-  $("#run, #explain-dropdown-toggle, #csv, #json, #xml, #load-local-query").prop("disabled", true);
+  $("#run, #explain-dropdown-toggle, #save-query, #saved-queries, #csv, #json, #xml, #load-local-query, #export-mode .btn").prop("disabled", true);
   $("#explain-dropdown").removeClass("open");
   $("#query_progress").show();
 }
 
 function hideQueryProgressMessage() {
-  $("#run, #explain-dropdown-toggle, #csv, #json, #xml, #load-local-query").prop("disabled", false);
+  $("#run, #explain-dropdown-toggle, #save-query, #saved-queries, #csv, #json, #xml, #load-local-query, #export-mode .btn").prop("disabled", false);
   $("#query_progress").hide();
 }
 
@@ -962,6 +1047,19 @@ function openInNewWindow(path, params) {
   win.focus();
 }
 
+// Returns the current query export mode: "download" or "copy"
+function getExportMode() {
+  return localStorage.getItem("export_mode") == "copy" ? "copy" : "download";
+}
+
+function setExportMode(mode) {
+  localStorage.setItem("export_mode", mode);
+
+  $("#export-mode .btn").each(function() {
+    $(this).toggleClass("active", $(this).data("mode") == mode);
+  });
+}
+
 function exportTo(format) {
   var query = getEditorSelection();
   if (query.length == 0) {
@@ -970,10 +1068,76 @@ function exportTo(format) {
 
   setCurrentTab("table_query");
 
-  openInNewWindow("api/query", {
+  var params = {
     "format": format,
     "query": encodeQuery(query)
-  })
+  };
+
+  if (getExportMode() == "copy") {
+    copyQueryResult(format, params);
+    return;
+  }
+
+  openInNewWindow("api/query", params);
+}
+
+// Fetches the query result in the given format and puts it into the clipboard
+function copyQueryResult(format, params) {
+  var button = $("#" + format);
+
+  showQueryProgressMessage();
+
+  $.ajax({
+    url: "api/query",
+    method: "get",
+    cache: false,
+    dataType: "text",
+    data: params,
+    headers: {
+      "x-session-id": getSessionId()
+    },
+    success: function(data) {
+      copyToClipboard(data).then(function(copied) {
+        if (copied) {
+          flashButtonValue(button, "Copied!");
+        } else {
+          showErrorBanner("Unable to copy the result into the clipboard");
+        }
+      });
+    },
+    error: function(xhr) {
+      showErrorBanner(parseResponseError(xhr) || "Unable to export the query result");
+    },
+    complete: function() {
+      hideQueryProgressMessage();
+    }
+  });
+}
+
+function parseResponseError(xhr) {
+  try {
+    return jQuery.parseJSON(xhr.responseText).error;
+  } catch(e) {
+    return null;
+  }
+}
+
+// Temporarily replaces the button label to confirm the action
+function flashButtonValue(button, value) {
+  var timeout = button.data("flash-timeout");
+
+  if (timeout) {
+    clearTimeout(timeout);
+  } else {
+    button.data("flash-value", button.val());
+  }
+
+  button.val(value).addClass("copied");
+
+  button.data("flash-timeout", setTimeout(function() {
+    button.val(button.data("flash-value")).removeClass("copied");
+    button.removeData("flash-timeout");
+  }, 1500));
 }
 
 // Fetch all unique values for the selected column in the table
@@ -1555,6 +1719,24 @@ $(document).ready(function() {
     runAnalyze();
   });
 
+  $("#save-query").on("click", function() {
+    saveCurrentQuery();
+  });
+
+  $("#saved-query-dropdown").on("click", "a.saved-query", function(e) {
+    e.preventDefault();
+    loadSavedQuery($(this).data("id"));
+  });
+
+  $("#saved-query-dropdown").on("click", "i.delete-saved-query", function(e) {
+    e.preventDefault();
+
+    // Keep the dropdown open so multiple queries could be deleted in a row
+    e.stopPropagation();
+
+    deleteSavedQuery($(this).parent().data("id"));
+  });
+
   $("#csv").on("click", function() {
     exportTo("csv");
   });
@@ -1565,6 +1747,10 @@ $(document).ready(function() {
 
   $("#xml").on("click", function() {
     exportTo("xml");
+  });
+
+  $("#export-mode .btn").on("click", function() {
+    setExportMode($(this).data("mode"));
   });
 
   $("#results_view").on("click", ".copy", function() {
@@ -1869,6 +2055,8 @@ $(document).ready(function() {
   initEditor();
   addShortcutTooltips();
   bindDatabaseObjectsFilter();
+  setExportMode(getExportMode());
+  renderSavedQueries();
 
   // Set session from the url
   var reqUrl = new URL(window.location);

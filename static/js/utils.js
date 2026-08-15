@@ -8,7 +8,22 @@ if (!Array.prototype.forEach) {
   }
 }
 
+// Copies text into the system clipboard.
+// Returns a promise that resolves to the success flag, never rejects.
 function copyToClipboard(text) {
+  // Async clipboard API is only available on secure origins, so pgweb served
+  // over plain http on a remote host still has to fall back to execCommand.
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(
+      function()  { return true; },
+      function()  { return copyToClipboardFallback(text); }
+    );
+  }
+
+  return Promise.resolve(copyToClipboardFallback(text));
+}
+
+function copyToClipboardFallback(text) {
   const element = document.createElement("textarea");
   element.style.display = "none;"
   element.value = text;
@@ -17,8 +32,10 @@ function copyToClipboard(text) {
   element.focus();
   element.setSelectionRange(0, element.value.length);
 
-  document.execCommand("copy");
+  const copied = document.execCommand("copy");
   document.body.removeChild(element);
+
+  return copied;
 }
 
 function guid() {

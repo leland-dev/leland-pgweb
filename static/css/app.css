@@ -104,10 +104,12 @@
   cursor: pointer;
 }
 
-#sidebar .current-database i.fa-database {
+#sidebar .current-database svg.leland-logo {
   position: absolute;
   left: 8px;
-  top: 18px;
+  top: 17px;
+  width: 16px;
+  height: 16px;
 }
 
 #sidebar .current-database input.typeahead {
@@ -378,6 +380,69 @@
 
 #input .actions .btn:last-child {
   margin-right: 0px;
+}
+
+#input .actions #saved-query-dropdown .dropdown-menu {
+  max-height: 300px;
+  min-width: 200px;
+  overflow-y: auto;
+}
+
+#input .actions #saved-query-dropdown .dropdown-menu a {
+  position: relative;
+  padding-right: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#input .actions #saved-query-dropdown .delete-saved-query {
+  display: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  margin-top: -6px;
+  color: #bbb;
+}
+
+#input .actions #saved-query-dropdown li:hover .delete-saved-query {
+  display: block;
+}
+
+#input .actions #saved-query-dropdown .delete-saved-query:hover {
+  color: #c9302c;
+}
+
+#input .actions #export-mode {
+  float: left;
+  margin-right: 10px;
+}
+
+#input .actions #export-mode .btn {
+  float: left;
+  margin-right: 0px;
+  padding: 0px 10px;
+}
+
+#input .actions #export-mode .btn + .btn {
+  margin-left: -1px;
+}
+
+#input .actions #export-mode .btn.active {
+  background: #eee;
+  border-color: #444;
+  color: #000;
+  box-shadow: none;
+  z-index: 1;
+}
+
+#input .actions .btn.copied {
+  border-color: #7eb54e;
+  color: #7eb54e;
+}
+
+#input .actions .btn.copied:hover {
+  border-color: #7eb54e;
+  color: #7eb54e;
 }
 
 #output {
