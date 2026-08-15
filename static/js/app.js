@@ -8,6 +8,7 @@ var currentObject       = null;
 var autocompleteObjects = [];
 var inputResizing       = false;
 var inputResizeOffset   = null;
+var cellCopyTimeout     = null;
 
 var filterOptions = {
   "equal":      "= 'DATA'",
@@ -130,6 +131,19 @@ function showErrorBanner(text) {
   }, 3000);
 
   $("#error_banner").text(text).show();
+}
+
+// Shows a transient message in the bottom right corner of the screen
+function showToast(text) {
+  if (window.toastTimeout != null) {
+    clearTimeout(window.toastTimeout);
+  }
+
+  $("#toast").stop(true, true).text(text).show();
+
+  window.toastTimeout = setTimeout(function() {
+    $("#toast").fadeOut("fast");
+  }, 2000);
 }
 
 function buildSchemaSection(name, objects) {
@@ -1685,7 +1699,28 @@ function bindContentModalEvents() {
     }
   });
 
+  // Single click copies the cell, double click opens it in the modal. The copy
+  // itself runs inline so the clipboard write stays inside the click's user
+  // gesture -- only the toast is deferred, which is what a double click cancels.
+  $("#results").on("click", "td > div", function(e) {
+    // Second click of a double click; the dblclick handler takes it from here
+    if (e.detail > 1) return;
+
+    var value = unescapeHtml($(this).html());
+    if (!value) return;
+
+    var copied = copyToClipboard(value);
+
+    cellCopyTimeout = setTimeout(function() {
+      copied.then(function(ok) {
+        showToast(ok ? "Copied to clipboard!" : "Unable to copy to clipboard");
+      });
+    }, 250);
+  });
+
   $("#results").on("dblclick", "td > div", function() {
+    clearTimeout(cellCopyTimeout);
+
     var value = unescapeHtml($(this).html());
     if (!value) return;
 

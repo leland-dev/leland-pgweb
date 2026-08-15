@@ -614,6 +614,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
+  cursor: pointer;
 }
 
 #results td div span.null {
@@ -753,6 +754,21 @@
   left: 0px;
   right: 0px;
   height: 30px;
+}
+
+#toast {
+  display: none;
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1100;
+  max-width: 320px;
+  padding: 10px 16px;
+  background: #333;
+  color: #fff;
+  font-size: 13px;
+  border-radius: 3px;
+  box-shadow: rgba(0, 0, 0, 0.25) 0 2px 8px;
 }
 
 /* -------------------------------------------------------------------------- */
