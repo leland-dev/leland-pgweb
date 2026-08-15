@@ -104,12 +104,10 @@
   cursor: pointer;
 }
 
-#sidebar .current-database svg.leland-logo {
+#sidebar .current-database i.fa-database {
   position: absolute;
   left: 8px;
-  top: 17px;
-  width: 16px;
-  height: 16px;
+  top: 18px;
 }
 
 #sidebar .current-database input.typeahead {
