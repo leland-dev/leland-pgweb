@@ -42,6 +42,31 @@ Visit https://pgweb-demo.fly.dev/ to see Pgweb in action.
 
 ## Usage
 
+### Local development
+
+The quickest way to get this fork running against our standard local test
+database:
+
+```
+make dev && ./pgweb --url "postgresql://shortfin:shortfin_password@localhost:5432/shortfin_db"
+```
+
+`make dev` builds the `./pgweb` binary from the current source, then the URL
+points it at the same database the monorepo uses locally — it matches
+`DATABASE_URL` in `leland-monorepo/.env.example`. If that database is not already
+running, start it from the monorepo with
+`pnpm --filter=@leland/backend docker:db`.
+
+When working on the frontend, set `PGWEB_ASSETS_DEVMODE=1` so assets are served
+from `./static` on disk instead of the copy embedded in the binary. A browser
+reload then picks up JS and CSS edits with no rebuild:
+
+```
+PGWEB_ASSETS_DEVMODE=1 ./pgweb --url "postgresql://shortfin:shortfin_password@localhost:5432/shortfin_db"
+```
+
+### Running the binary
+
 Start server:
 
 ```
