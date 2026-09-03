@@ -60,6 +60,8 @@ func SetupRoutes(router *gin.Engine) {
 	api.POST("/local_queries/:id", requireLocalQueries(), RunLocalQuery)
 	api.GET("/shared_queries", requireSharedQueries(), GetSharedQueries)
 	api.POST("/shared_queries", requireSharedQueries(), CreateSharedQuery)
+	api.PUT("/shared_queries", requireSharedQueries(), UpdateSharedQuery)
+	api.DELETE("/shared_queries", requireSharedQueries(), DeleteSharedQuery)
 }
 
 func SetupMetrics(engine *gin.Engine) {

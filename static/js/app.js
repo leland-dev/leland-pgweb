@@ -11,6 +11,7 @@ var inputResizeOffset   = null;
 var cellCopyTimeout     = null;
 var sharedQueries       = [];
 var pendingQuery        = null;
+var editingQueryName    = null;
 
 var filterOptions = {
   "equal":      "= 'DATA'",
@@ -116,6 +117,8 @@ function getHistory(cb)                     { apiCall("get", "/history", {}, cb)
 function getBookmarks(cb)                   { apiCall("get", "/bookmarks", {}, cb); }
 function getSharedQueries(cb)               { apiCall("get", "/shared_queries", {}, cb); }
 function createSharedQuery(params, cb)      { apiCall("post", "/shared_queries", params, cb); }
+function updateSharedQuery(params, cb)      { apiCall("put", "/shared_queries", params, cb); }
+function deleteSharedQuery(name, cb)        { apiCall("delete", "/shared_queries?name=" + encodeURIComponent(name), {}, cb); }
 function executeQuery(query, cb)            { apiCall("post", "/query", { query: query }, cb); }
 function explainQuery(query, cb)            { apiCall("post", "/explain", { query: query }, cb); }
 function analyzeQuery(query, cb)            { apiCall("post", "/analyze", { query: query }, cb); }
@@ -398,12 +401,30 @@ function loadSharedQueries(cb) {
   });
 }
 
+// Shared query names are their identity, matched case-insensitively the same
+// way the server does it.
+function namesMatch(a, b) {
+  return String(a).toLowerCase() == String(b).toLowerCase();
+}
+
 function findSharedQuery(name) {
   for (var i = 0; i < sharedQueries.length; i++) {
-    if (sharedQueries[i].name.toLowerCase() == name.toLowerCase()) return sharedQueries[i];
+    if (namesMatch(sharedQueries[i].name, name)) return sharedQueries[i];
   }
 
   return null;
+}
+
+// Reload the list and repaint the tab if it is the one currently on screen.
+function refreshSharedQueries() {
+  loadSharedQueries(function(err) {
+    if (err) {
+      showErrorBanner("Unable to reload shared queries: " + err);
+      return;
+    }
+
+    if ($("#table_saved_queries").hasClass("selected")) renderSharedQueries();
+  });
 }
 
 function renderSharedQueries() {
@@ -418,9 +439,19 @@ function renderSharedQueries() {
   if (rows.length == 0) return;
 
   // buildTable takes no per-row metadata, so rows are tagged by index after
-  // the fact; the render order is the order of sharedQueries.
+  // the fact; the render order is the order of sharedQueries. The actions column
+  // is appended the same way rather than through buildTable's `action` option,
+  // which interpolates its data-value into the HTML unescaped -- a query named
+  // "Bob's queries" would break the attribute.
+  $("#results_header").append("<th class='row-menu-header'></th>");
+
   $("#results_body tr").each(function(idx) {
+    var toggle = $("<a href='#' title='Query actions'></a>").
+      attr("data-shared-query", idx).
+      append("<i class='fa fa-ellipsis-h'></i>");
+
     $(this).attr("data-shared-query", idx);
+    $("<td class='row-menu-cell'></td>").append(toggle).appendTo(this);
   });
 
   // Marks the rows as loadable, and doubles as the flag that turns off the
@@ -440,6 +471,126 @@ function showSharedQueries() {
     $("#input").hide();
     $("#body").prop("class", "full");
     $("#results").addClass("no-crop");
+  });
+}
+
+function openRowMenu(anchor, idx) {
+  var menu = $("#row_menu .dropdown-menu");
+  var rect = anchor.getBoundingClientRect();
+
+  $("#row_menu").data("shared-query", idx);
+  $("#results td.row-menu-cell a").removeClass("active");
+  $(anchor).addClass("active");
+
+  // Shown before measuring, otherwise outerHeight/outerWidth are both 0
+  menu.show();
+
+  var top  = rect.bottom + 2;
+  var left = rect.right - menu.outerWidth();
+
+  // Flip above the button when there is no room below it
+  if (top + menu.outerHeight() > window.innerHeight) {
+    top = rect.top - menu.outerHeight() - 2;
+  }
+
+  menu.css({ top: Math.max(top, 4) + "px", left: Math.max(left, 4) + "px" });
+}
+
+function closeRowMenu() {
+  $("#row_menu .dropdown-menu").hide();
+  $("#results td.row-menu-cell a").removeClass("active");
+}
+
+function openEditQueryDialog(idx) {
+  var item = sharedQueries[idx];
+  if (!item) return;
+
+  var dialog = document.getElementById("edit_query_dialog");
+  if (dialog.open) return;
+
+  // The name the server currently knows this query by, kept separately so a
+  // rename can still find the row it is meant to replace.
+  editingQueryName = item.name;
+
+  $("#edit_query_name").val(item.name);
+  $("#edit_query_sql").val(item.query);
+  $("#edit_query_contributor").val(item.contributor);
+  $("#edit_query_sql_note").removeClass("warning error").text("");
+
+  updateEditQueryDialog();
+  dialog.showModal();
+  $("#edit_query_name").focus();
+}
+
+function updateEditQueryDialog() {
+  var name        = $.trim($("#edit_query_name").val());
+  var sql         = $.trim($("#edit_query_sql").val());
+  var contributor = $.trim($("#edit_query_contributor").val());
+
+  var note  = $("#edit_query_name_note").removeClass("warning error").text("");
+  var clash = name.length > 0 ? findSharedQuery(name) : null;
+
+  // Clashing with itself just means the name was left alone. Clashing with a
+  // different query is refused by the server, so say so before the round trip.
+  if (clash && !namesMatch(clash.name, editingQueryName)) {
+    note.addClass("error").text('Another shared query is already named "' + clash.name + '".');
+  }
+
+  $("#edit_query_contributor_note").
+    removeClass("warning error").
+    text(contributor.length == 0 ? "Required to save a shared query." : "");
+
+  $("#edit_query_save").prop("disabled",
+    name.length == 0 || sql.length == 0 || contributor.length == 0 || note.hasClass("error"));
+}
+
+function saveEditedQuery() {
+  var name        = $.trim($("#edit_query_name").val());
+  var sql         = $.trim($("#edit_query_sql").val());
+  var contributor = $.trim($("#edit_query_contributor").val());
+
+  if (name.length == 0 || sql.length == 0 || contributor.length == 0) return;
+
+  var button = $("#edit_query_save").prop("disabled", true);
+
+  updateSharedQuery({
+    original_name: editingQueryName,
+    name:          name,
+    query:         sql,
+    contributor:   contributor
+  }, function(resp) {
+    button.prop("disabled", false);
+
+    if (resp.error) {
+      // Keep the dialog open on failure so the edit is not lost
+      if (document.getElementById("edit_query_dialog").open) {
+        $("#edit_query_name_note").removeClass("warning").addClass("error").text(resp.error);
+      } else {
+        showErrorBanner("Unable to save query: " + resp.error);
+      }
+      return;
+    }
+
+    document.getElementById("edit_query_dialog").close();
+    showToast('Updated "' + name + '"');
+    refreshSharedQueries();
+  });
+}
+
+function confirmDeleteSharedQuery(idx) {
+  var item = sharedQueries[idx];
+  if (!item) return;
+
+  if (!confirm('Delete the shared query "' + item.name + '"?\n\nThis removes it for everyone.')) return;
+
+  deleteSharedQuery(item.name, function(resp) {
+    if (resp.error) {
+      showErrorBanner("Unable to delete query: " + resp.error);
+      return;
+    }
+
+    showToast('Deleted "' + item.name + '"');
+    refreshSharedQueries();
   });
 }
 
@@ -541,6 +692,8 @@ function resetTable() {
   $("#results_header").html("");
   $("#results_body").html("");
   $("#results_view").html("").hide();
+
+  closeRowMenu();
 
   $("#results").
     data("mode", "").
@@ -1961,14 +2114,79 @@ $(document).ready(function() {
       closeSaveQueryDialog();
       showToast('Shared "' + name + '" with the team');
 
-      loadSharedQueries(function() {
-        if ($("#table_saved_queries").hasClass("selected")) renderSharedQueries();
-      });
+      refreshSharedQueries();
     });
   });
 
-  $("#results_body").on("click", "tr[data-shared-query]", function() {
+  $("#results_body").on("click", "tr[data-shared-query]", function(e) {
+    if ($(e.target).closest("td.row-menu-cell").length) return;
     loadSharedQuery($(this).data("shared-query"));
+  });
+
+  $("#results_body").on("click", "td.row-menu-cell a", function(e) {
+    e.preventDefault();
+
+    // Keeps the row handler from loading the query and the document handler
+    // below from treating this as an outside click
+    e.stopPropagation();
+
+    var idx = $(this).data("shared-query");
+
+    // Clicking the same button again closes the menu
+    if ($("#row_menu .dropdown-menu").is(":visible") && $("#row_menu").data("shared-query") === idx) {
+      closeRowMenu();
+      return;
+    }
+
+    openRowMenu(this, idx);
+  });
+
+  $("#row_menu").on("click", "a", function(e) {
+    e.preventDefault();
+
+    var idx    = $("#row_menu").data("shared-query");
+    var action = $(this).data("action");
+
+    closeRowMenu();
+
+    if (action == "edit") openEditQueryDialog(idx);
+    if (action == "delete") confirmDeleteSharedQuery(idx);
+  });
+
+  $(document).on("click", function(e) {
+    if ($(e.target).closest("#row_menu, td.row-menu-cell").length) return;
+    closeRowMenu();
+  });
+
+  $(document).on("keydown", function(e) {
+    if (e.key == "Escape") closeRowMenu();
+  });
+
+  // The menu is position: fixed, so it would otherwise hang in place while the
+  // results scroll underneath it.
+  $("#output").on("scroll", function() {
+    closeRowMenu();
+  });
+
+  $("#edit_query_name, #edit_query_sql, #edit_query_contributor").on("input", function() {
+    updateEditQueryDialog();
+  });
+
+  $("#edit_query_dialog form").on("submit", function(e) {
+    e.preventDefault();
+    $("#edit_query_save").click();
+  });
+
+  $("#edit_query_cancel").on("click", function() {
+    document.getElementById("edit_query_dialog").close();
+  });
+
+  $("#edit_query_dialog").on("close", function() {
+    editingQueryName = null;
+  });
+
+  $("#edit_query_save").on("click", function() {
+    saveEditedQuery();
   });
 
   $("#saved-query-dropdown").on("click", "a.saved-query", function(e) {

@@ -745,7 +745,7 @@
 
 /* Native <dialog>, so the backdrop, ESC-to-close and focus containment are
    handled by the browser rather than by JS. Styled to match #content_modal. */
-#save_query_dialog {
+dialog.app-dialog {
   width: 480px;
   max-width: 90vw;
   padding: 0;
@@ -756,11 +756,11 @@
   font-size: 13px;
 }
 
-#save_query_dialog::backdrop {
+dialog.app-dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
 
-#save_query_dialog .title {
+dialog.app-dialog .title {
   font-weight: bold;
   line-height: 24px;
   background: #f5f5f5;
@@ -768,21 +768,21 @@
   padding: 4px 4px 4px 8px;
 }
 
-#save_query_dialog .fields {
+dialog.app-dialog .fields {
   padding: 12px;
 }
 
-#save_query_dialog label {
+dialog.app-dialog label {
   display: block;
   margin-bottom: 3px;
   font-weight: bold;
 }
 
-#save_query_dialog input {
+dialog.app-dialog input {
   width: 100%;
 }
 
-#save_query_dialog .field-note {
+dialog.app-dialog .field-note {
   min-height: 18px;
   margin: 3px 0 10px 0;
   font-size: 11px;
@@ -790,27 +790,74 @@
   color: #999;
 }
 
-#save_query_dialog .field-note.warning {
+dialog.app-dialog .field-note.warning {
   color: #8a6d3b;
 }
 
-#save_query_dialog .field-note.error {
+dialog.app-dialog .field-note.error {
   color: #be2740;
 }
 
-#save_query_dialog .fields .field-note:last-child {
+dialog.app-dialog .fields .field-note:last-child {
   margin-bottom: 0;
 }
 
-#save_query_dialog .actions {
+dialog.app-dialog textarea {
+  width: 100%;
+  min-height: 160px;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Wider than the save dialog to give the SQL textarea room to breathe. */
+#edit_query_dialog {
+  width: 640px;
+}
+
+dialog.app-dialog .actions {
   padding: 8px;
   text-align: right;
   background: #f5f5f5;
   border-top: 1px solid #ddd;
 }
 
-#save_query_dialog .actions .btn {
+dialog.app-dialog .actions .btn {
   margin-left: 4px;
+}
+
+/* Per-row actions menu. Fixed rather than absolute so it escapes #output's
+   overflow: auto instead of being clipped by it; JS sets top/left. */
+#row_menu .dropdown-menu {
+  position: fixed;
+  display: none;
+  z-index: 1200;
+  min-width: 120px;
+}
+
+#results th.row-menu-header {
+  width: 28px;
+}
+
+#results td.row-menu-cell {
+  width: 28px;
+  padding: 0;
+  text-align: center;
+}
+
+#results td.row-menu-cell a {
+  display: block;
+  width: 100%;
+  line-height: 24px;
+  color: #999;
+  text-decoration: none;
+}
+
+#results td.row-menu-cell a:hover,
+#results td.row-menu-cell a.active {
+  color: #333;
+  background: #e8e8e8;
 }
 
 /* Rows in the Saved Queries tab load the query on click. */

@@ -159,7 +159,7 @@
     </div>
   </div>
 
-  <dialog id="save_query_dialog">
+  <dialog id="save_query_dialog" class="app-dialog">
     <form method="dialog">
       <div class="title">Save Query</div>
       <div class="fields">
@@ -178,6 +178,39 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="edit_query_dialog" class="app-dialog">
+    <form method="dialog">
+      <div class="title">Edit Shared Query</div>
+      <div class="fields">
+        <label for="edit_query_name">Name</label>
+        <input type="text" class="form-control input-sm" id="edit_query_name" autocomplete="off" />
+        <div class="field-note" id="edit_query_name_note"></div>
+
+        <label for="edit_query_sql">Query</label>
+        <textarea class="form-control input-sm" id="edit_query_sql" rows="10" spellcheck="false"></textarea>
+        <div class="field-note" id="edit_query_sql_note"></div>
+
+        <label for="edit_query_contributor">Contributor</label>
+        <input type="text" class="form-control input-sm" id="edit_query_contributor" autocomplete="off" />
+        <div class="field-note" id="edit_query_contributor_note">Required to save a shared query.</div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn btn-sm btn-default" id="edit_query_cancel">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" id="edit_query_save">Save Changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Sits here rather than inside the table, like the other context menus below,
+       so #output's overflow: auto cannot clip it. Positioned at the clicked row's
+       button by JS. -->
+  <div id="row_menu">
+    <ul class="dropdown-menu" role="menu">
+      <li><a href="#" data-action="edit">Edit</a></li>
+      <li><a href="#" data-action="delete">Delete</a></li>
+    </ul>
+  </div>
 
   <div id="content_modal">
     <div class="title">

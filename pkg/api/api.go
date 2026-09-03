@@ -633,6 +633,34 @@ func CreateSharedQuery(c *gin.Context) {
 	serveResult(c, query, err)
 }
 
+// UpdateSharedQuery edits an existing shared query, which may include renaming
+// it. The query being edited is identified by "original_name" in the payload
+// rather than by a path parameter: names are free text and may contain slashes,
+// so they do not survive a single URL path segment.
+func UpdateSharedQuery(c *gin.Context) {
+	query, err := SharedQueryStore.Update(
+		c.Request.FormValue("original_name"),
+		sharedqueries.Query{
+			Name:        c.Request.FormValue("name"),
+			Query:       c.Request.FormValue("query"),
+			Contributor: c.Request.FormValue("contributor"),
+		},
+	)
+	serveResult(c, query, err)
+}
+
+// DeleteSharedQuery removes a shared query. The name comes from the query
+// string: Go only parses a request body into the form values for POST, PUT and
+// PATCH, so a DELETE body would arrive empty.
+func DeleteSharedQuery(c *gin.Context) {
+	if err := SharedQueryStore.Delete(c.Query("name")); err != nil {
+		badRequest(c, err)
+		return
+	}
+
+	successResponse(c, gin.H{"status": "ok"})
+}
+
 // DataExport performs database table export
 func DataExport(c *gin.Context) {
 	db := DB(c)

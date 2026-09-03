@@ -137,8 +137,10 @@ signing in the binary. Set all three or none:
 The store loads lazily on first use, so an unreachable Cloudflare API degrades
 the Saved Queries tab instead of blocking startup.
 
-To remove a shared query, delete or edit the `saved_queries` key in the KV
-namespace (Cloudflare dashboard or `wrangler`); there is no delete in the UI yet.
+Each row in the Saved Queries tab has a `...` menu with **Edit** (name, SQL and
+contributor) and **Delete**. Both act on the shared list, so they change what
+everyone sees. Renaming onto a name another query already uses is refused rather
+than merging the two.
 
 ## Testing
 

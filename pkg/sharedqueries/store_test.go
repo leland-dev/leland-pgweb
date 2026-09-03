@@ -139,3 +139,134 @@ func Test_StoreListReturnsACopy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Users", fresh[0].Name, "callers must not be able to mutate stored queries")
 }
+
+func Test_StoreUpdate(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	// Every field, including the name, is editable
+	updated, err := store.Update("Users", Query{Name: "Active Users", Query: "SELECT 2", Contributor: "sam"})
+	assert.NoError(t, err)
+	assert.Equal(t, "Active Users", updated.Name)
+
+	list, err := store.List()
+	assert.NoError(t, err)
+	assert.Len(t, list, 1, "a rename must not leave the old entry behind")
+	assert.Equal(t, "Active Users", list[0].Name)
+	assert.Equal(t, "SELECT 2", list[0].Query)
+	assert.Equal(t, "sam", list[0].Contributor)
+}
+
+func Test_StoreUpdateKeepingTheSameName(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	// Editing only the SQL must not trip the name-collision check against itself
+	_, err = store.Update("Users", Query{Name: "Users", Query: "SELECT 2", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	list, _ := store.List()
+	assert.Len(t, list, 1)
+	assert.Equal(t, "SELECT 2", list[0].Query)
+
+	// Same, when only the capitalization changes
+	_, err = store.Update("Users", Query{Name: "USERS", Query: "SELECT 3", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	list, _ = store.List()
+	assert.Len(t, list, 1)
+	assert.Equal(t, "USERS", list[0].Name)
+}
+
+func Test_StoreUpdateRejectsRenameOntoAnotherQuery(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+	_, err = store.Upsert(Query{Name: "Orders", Query: "SELECT 2", Contributor: "sam"})
+	assert.NoError(t, err)
+
+	// Renaming onto an existing name would silently destroy someone else's query
+	_, err = store.Update("Users", Query{Name: "orders", Query: "SELECT 3", Contributor: "carter"})
+	assert.EqualError(t, err, `a different shared query named "Orders" already exists`)
+
+	list, _ := store.List()
+	assert.Len(t, list, 2, "the rejected rename must leave both queries intact")
+}
+
+func Test_StoreUpdateMissingQuery(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Update("Nope", Query{Name: "Nope", Query: "SELECT 1", Contributor: "carter"})
+	assert.ErrorIs(t, err, ErrQueryNotFound)
+
+	_, err = store.Update("", Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.ErrorIs(t, err, ErrNameRequired)
+}
+
+func Test_StoreUpdateValidatesLikeUpsert(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	_, err = store.Update("Users", Query{Name: "Users", Query: "SELECT 1", Contributor: ""})
+	assert.ErrorIs(t, err, ErrContributorRequired)
+
+	_, err = store.Update("Users", Query{Name: "", Query: "SELECT 1", Contributor: "carter"})
+	assert.ErrorIs(t, err, ErrNameRequired)
+}
+
+func Test_StoreUpdateLeavesListUnchangedWhenSaveFails(t *testing.T) {
+	backend := &failingBackend{}
+	store := NewStore(backend)
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	backend.saveErr = errors.New("kv unavailable")
+
+	_, err = store.Update("Users", Query{Name: "Renamed", Query: "SELECT 2", Contributor: "carter"})
+	assert.EqualError(t, err, "kv unavailable")
+
+	list, _ := store.List()
+	assert.Len(t, list, 1)
+	assert.Equal(t, "Users", list[0].Name, "a failed backend write must not be reflected in memory")
+}
+
+func Test_StoreDelete(t *testing.T) {
+	store := NewStore(&Memory{})
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+	_, err = store.Upsert(Query{Name: "Orders", Query: "SELECT 2", Contributor: "sam"})
+	assert.NoError(t, err)
+
+	// Matching is case-insensitive, like every other name lookup
+	assert.NoError(t, store.Delete("users"))
+
+	list, _ := store.List()
+	assert.Len(t, list, 1)
+	assert.Equal(t, "Orders", list[0].Name)
+
+	assert.ErrorIs(t, store.Delete("users"), ErrQueryNotFound)
+	assert.ErrorIs(t, store.Delete("  "), ErrNameRequired)
+}
+
+func Test_StoreDeleteLeavesListUnchangedWhenSaveFails(t *testing.T) {
+	backend := &failingBackend{}
+	store := NewStore(backend)
+
+	_, err := store.Upsert(Query{Name: "Users", Query: "SELECT 1", Contributor: "carter"})
+	assert.NoError(t, err)
+
+	backend.saveErr = errors.New("kv unavailable")
+	assert.EqualError(t, store.Delete("Users"), "kv unavailable")
+
+	list, _ := store.List()
+	assert.Len(t, list, 1, "a failed backend write must not be reflected in memory")
+}

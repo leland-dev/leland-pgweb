@@ -31,6 +31,7 @@ var (
 	ErrNameRequired        = errors.New("name is required")
 	ErrQueryRequired       = errors.New("query is required")
 	ErrContributorRequired = errors.New("contributor is required to save a shared query")
+	ErrQueryNotFound       = errors.New("shared query not found")
 )
 
 // Query is a single query shared with the team.
@@ -136,6 +137,99 @@ func (s *Store) Upsert(query Query) (Query, error) {
 	s.queries = next
 
 	return query, nil
+}
+
+// Update replaces the query stored under originalName. The name itself may
+// change, which is why the original is passed separately -- names are the
+// identity here, so a rename is a delete plus an insert.
+//
+// Unlike Upsert, a rename onto a name another query already uses is rejected
+// rather than silently merging the two: an edit that quietly destroys someone
+// else's query is not a reasonable outcome of pressing "Save Changes".
+func (s *Store) Update(originalName string, query Query) (Query, error) {
+	query, err := validate(query)
+	if err != nil {
+		return query, err
+	}
+
+	originalName = strings.TrimSpace(originalName)
+	if originalName == "" {
+		return query, ErrNameRequired
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.ensureLoaded(); err != nil {
+		return query, err
+	}
+
+	found := false
+	next := make([]Query, 0, len(s.queries))
+
+	for _, existing := range s.queries {
+		if strings.EqualFold(existing.Name, originalName) {
+			found = true
+			continue
+		}
+		if strings.EqualFold(existing.Name, query.Name) {
+			return query, fmt.Errorf("a different shared query named %q already exists", existing.Name)
+		}
+		next = append(next, existing)
+	}
+
+	if !found {
+		// Someone else renamed or deleted it between the list load and the save
+		return query, ErrQueryNotFound
+	}
+
+	next = sortQueries(append(next, query))
+
+	if err := s.backend.Save(next); err != nil {
+		return query, err
+	}
+
+	s.queries = next
+
+	return query, nil
+}
+
+// Delete removes the query stored under name.
+func (s *Store) Delete(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ErrNameRequired
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.ensureLoaded(); err != nil {
+		return err
+	}
+
+	found := false
+	next := make([]Query, 0, len(s.queries))
+
+	for _, existing := range s.queries {
+		if strings.EqualFold(existing.Name, name) {
+			found = true
+			continue
+		}
+		next = append(next, existing)
+	}
+
+	if !found {
+		return ErrQueryNotFound
+	}
+
+	if err := s.backend.Save(next); err != nil {
+		return err
+	}
+
+	s.queries = next
+
+	return nil
 }
 
 func validate(query Query) (Query, error) {
