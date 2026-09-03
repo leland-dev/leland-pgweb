@@ -9,6 +9,8 @@ var autocompleteObjects = [];
 var inputResizing       = false;
 var inputResizeOffset   = null;
 var cellCopyTimeout     = null;
+var sharedQueries       = [];
+var pendingQuery        = null;
 
 var filterOptions = {
   "equal":      "= 'DATA'",
@@ -112,6 +114,8 @@ function getTablesStats(cb)                 { apiCall("get", "/tables_stats", {}
 function getFunction(id, cb)                { apiCall("get", "/functions/" + id, {}, cb); }
 function getHistory(cb)                     { apiCall("get", "/history", {}, cb); }
 function getBookmarks(cb)                   { apiCall("get", "/bookmarks", {}, cb); }
+function getSharedQueries(cb)               { apiCall("get", "/shared_queries", {}, cb); }
+function createSharedQuery(params, cb)      { apiCall("post", "/shared_queries", params, cb); }
 function executeQuery(query, cb)            { apiCall("post", "/query", { query: query }, cb); }
 function explainQuery(query, cb)            { apiCall("post", "/explain", { query: query }, cb); }
 function analyzeQuery(query, cb)            { apiCall("post", "/analyze", { query: query }, cb); }
@@ -257,6 +261,26 @@ function renderSavedQueries() {
   $("#saved-query-dropdown").toggle(queries.length > 0);
 }
 
+function findSavedQueryIndex(name) {
+  var queries = getSavedQueries();
+
+  for (var i = 0; i < queries.length; i++) {
+    if (queries[i].name.toLowerCase() == name.toLowerCase()) return i;
+  }
+
+  return -1;
+}
+
+// The contributor is remembered so it only has to be typed once per browser,
+// which also means "Save Shared" is available straight away on later saves.
+function getContributor() {
+  return localStorage.getItem("query_contributor") || "";
+}
+
+function setContributor(name) {
+  localStorage.setItem("query_contributor", name);
+}
+
 function saveCurrentQuery() {
   // Save the exact selection if user has one, the whole editor otherwise
   var query = $.trim(editor.getSelectedText()) || $.trim(editor.getValue());
@@ -266,21 +290,64 @@ function saveCurrentQuery() {
     return;
   }
 
-  var name = prompt("Save query as:");
-  if (name == null) return;
+  var dialog = document.getElementById("save_query_dialog");
+  if (dialog.open) return;
 
-  name = $.trim(name);
-  if (name.length == 0) return;
+  // Captured up front so editing the editor behind an open dialog cannot
+  // change what actually gets saved.
+  pendingQuery = query;
 
+  $("#save_query_name").val("");
+  $("#save_query_contributor").val(getContributor());
+  updateSaveQueryDialog();
+
+  dialog.showModal();
+  $("#save_query_name").focus();
+}
+
+function closeSaveQueryDialog() {
+  document.getElementById("save_query_dialog").close();
+}
+
+// Keeps the dialog in step with what has been typed: "Save Local" needs a name,
+// "Save Shared" needs a name and a contributor, and either one warns before it
+// replaces a query that already uses that name.
+function updateSaveQueryDialog() {
+  var name        = $.trim($("#save_query_name").val());
+  var contributor = $.trim($("#save_query_contributor").val());
+
+  var nameNote = $("#save_query_name_note").removeClass("warning error").text("");
+
+  if (name.length > 0) {
+    var clashes = [];
+    if (findSavedQueryIndex(name) >= 0) clashes.push("Local Saved");
+    if (findSharedQuery(name)) clashes.push("Shared");
+
+    if (clashes.length > 0) {
+      nameNote.addClass("warning").text("Replaces the existing " + clashes.join(" and ") + " query with this name.");
+    }
+  }
+
+  $("#save_query_contributor_note").
+    removeClass("warning error").
+    text(contributor.length == 0 ?
+      "Required to save a query for the team." :
+      "Shared queries are visible to everyone with access to pgweb.");
+
+  $("#save_query_local").prop("disabled", name.length == 0);
+  $("#save_query_shared").prop("disabled", name.length == 0 || contributor.length == 0);
+}
+
+function saveQueryDialogError(message) {
+  $("#save_query_name_note").removeClass("warning").addClass("error").text(message);
+}
+
+function saveQueryLocally(name, query) {
   var queries = getSavedQueries();
-  var existing = -1;
-
-  queries.forEach(function(item, idx) {
-    if (item.name.toLowerCase() == name.toLowerCase()) existing = idx;
-  });
+  var existing = findSavedQueryIndex(name);
 
   if (existing >= 0) {
-    if (!confirm('Query "' + queries[existing].name + '" already exists. Overwrite it?')) return;
+    // Keep the original capitalization when replacing an existing entry
     queries[existing].query = query;
   } else {
     queries.push({ name: name, query: query });
@@ -310,6 +377,81 @@ function deleteSavedQuery(id) {
 
   queries.splice(id, 1);
   setSavedQueries(queries);
+}
+
+// Shared queries live on the server (see pkg/sharedqueries) so the whole team
+// sees the same list, unlike the browser-local "Local Saved" queries above.
+function loadSharedQueries(cb) {
+  if (!appFeatures.shared_queries) {
+    if (cb) cb(null);
+    return;
+  }
+
+  getSharedQueries(function(resp) {
+    if (resp.error) {
+      if (cb) cb(resp.error);
+      return;
+    }
+
+    sharedQueries = resp || [];
+    if (cb) cb(null);
+  });
+}
+
+function findSharedQuery(name) {
+  for (var i = 0; i < sharedQueries.length; i++) {
+    if (sharedQueries[i].name.toLowerCase() == name.toLowerCase()) return sharedQueries[i];
+  }
+
+  return null;
+}
+
+function renderSharedQueries() {
+  var rows = [];
+
+  sharedQueries.forEach(function(item) {
+    rows.push([item.name, item.query, item.contributor]);
+  });
+
+  buildTable({ columns: ["name", "query", "contributor"], rows: rows });
+
+  if (rows.length == 0) return;
+
+  // buildTable takes no per-row metadata, so rows are tagged by index after
+  // the fact; the render order is the order of sharedQueries.
+  $("#results_body tr").each(function(idx) {
+    $(this).attr("data-shared-query", idx);
+  });
+
+  // Marks the rows as loadable, and doubles as the flag that turns off the
+  // click-to-copy-cell behaviour used on every other tab.
+  $("#results").attr("data-clickable-rows", "true");
+}
+
+function showSharedQueries() {
+  loadSharedQueries(function(err) {
+    if (err) {
+      buildTable({ error: err });
+    } else {
+      renderSharedQueries();
+    }
+
+    setCurrentTab("table_saved_queries");
+    $("#input").hide();
+    $("#body").prop("class", "full");
+    $("#results").addClass("no-crop");
+  });
+}
+
+function loadSharedQuery(idx) {
+  var item = sharedQueries[idx];
+  if (!item) return;
+
+  showQueryPanel();
+
+  editor.setValue(item.query);
+  editor.clearSelection();
+  editor.focus();
 }
 
 function loadSchemas() {
@@ -402,6 +544,7 @@ function resetTable() {
 
   $("#results").
     data("mode", "").
+    removeAttr("data-clickable-rows").
     removeClass("empty").
     removeClass("no-crop").
     show();
@@ -1703,6 +1846,9 @@ function bindContentModalEvents() {
   // itself runs inline so the clipboard write stays inside the click's user
   // gesture -- only the toast is deferred, which is what a double click cancels.
   $("#results").on("click", "td > div", function(e) {
+    // Rows on the Saved Queries tab load the query instead of copying a cell
+    if ($("#results").attr("data-clickable-rows")) return;
+
     // Second click of a double click; the dblclick handler takes it from here
     if (e.detail > 1) return;
 
@@ -1719,6 +1865,8 @@ function bindContentModalEvents() {
   });
 
   $("#results").on("dblclick", "td > div", function() {
+    if ($("#results").attr("data-clickable-rows")) return;
+
     clearTimeout(cellCopyTimeout);
 
     var value = unescapeHtml($(this).html());
@@ -1738,6 +1886,7 @@ $(document).ready(function() {
   $("#table_indexes").on("click",     function() { showTableIndexes();     });
   $("#table_constraints").on("click", function() { showTableConstraints(); });
   $("#table_history").on("click",     function() { showQueryHistory();     });
+  $("#table_saved_queries").on("click", function() { showSharedQueries();   });
   $("#table_query").on("click",       function() { showQueryPanel();       });
   $("#table_connection").on("click",  function() { showConnectionPanel();  });
   $("#table_activity").on("click",    function() { showActivityPanel();    });
@@ -1756,6 +1905,70 @@ $(document).ready(function() {
 
   $("#save-query").on("click", function() {
     saveCurrentQuery();
+  });
+
+  $("#save_query_name, #save_query_contributor").on("input", function() {
+    updateSaveQueryDialog();
+  });
+
+  // The form has no submit button, so Enter is wired to the primary action
+  // explicitly rather than relying on implicit submission.
+  $("#save_query_dialog form").on("submit", function(e) {
+    e.preventDefault();
+    $("#save_query_local").click();
+  });
+
+  $("#save_query_cancel").on("click", function() {
+    closeSaveQueryDialog();
+  });
+
+  $("#save_query_dialog").on("close", function() {
+    pendingQuery = null;
+  });
+
+  $("#save_query_local").on("click", function() {
+    var name = $.trim($("#save_query_name").val());
+    if (name.length == 0 || !pendingQuery) return;
+
+    saveQueryLocally(name, pendingQuery);
+    closeSaveQueryDialog();
+    showToast('Saved "' + name + '" to Local Saved');
+  });
+
+  $("#save_query_shared").on("click", function() {
+    var name        = $.trim($("#save_query_name").val());
+    var contributor = $.trim($("#save_query_contributor").val());
+
+    if (name.length == 0 || contributor.length == 0 || !pendingQuery) return;
+
+    var button = $(this).prop("disabled", true);
+    var query  = pendingQuery;
+
+    createSharedQuery({ name: name, contributor: contributor, query: query }, function(resp) {
+      button.prop("disabled", false);
+
+      // Keep the dialog open on failure so the query is not lost
+      if (resp.error) {
+        if (document.getElementById("save_query_dialog").open) {
+          saveQueryDialogError(resp.error);
+        } else {
+          showErrorBanner("Unable to share query: " + resp.error);
+        }
+        return;
+      }
+
+      setContributor(contributor);
+      closeSaveQueryDialog();
+      showToast('Shared "' + name + '" with the team');
+
+      loadSharedQueries(function() {
+        if ($("#table_saved_queries").hasClass("selected")) renderSharedQueries();
+      });
+    });
+  });
+
+  $("#results_body").on("click", "tr[data-shared-query]", function() {
+    loadSharedQuery($(this).data("shared-query"));
   });
 
   $("#saved-query-dropdown").on("click", "a.saved-query", function(e) {
@@ -2111,6 +2324,11 @@ $(document).ready(function() {
     appInfo = resp.app;
     appFeatures = resp.features;
 
+    if (!appFeatures.shared_queries) {
+      $("#table_saved_queries").hide();
+      $("#save_query_shared").hide();
+    }
+
     getConnection(function(resp) {
       if (resp.error) {
         connected = false;
@@ -2122,6 +2340,12 @@ $(document).ready(function() {
       connected = true;
       loadSchemas();
       loadLocalQueries();
+
+      // Fetched up front so the save dialog can warn about name clashes
+      // without waiting for the Saved Queries tab to be opened.
+      loadSharedQueries(function(err) {
+        if (err) showErrorBanner("Unable to load shared queries: " + err);
+      });
 
       $("#current_database").text(resp.current_database);
       $("#main").show();

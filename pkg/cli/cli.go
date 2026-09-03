@@ -21,6 +21,7 @@ import (
 	"github.com/sosedoff/pgweb/pkg/connection"
 	"github.com/sosedoff/pgweb/pkg/metrics"
 	"github.com/sosedoff/pgweb/pkg/queries"
+	"github.com/sosedoff/pgweb/pkg/sharedqueries"
 	"github.com/sosedoff/pgweb/pkg/util"
 )
 
@@ -141,7 +142,38 @@ func initOptions() {
 	}
 
 	configureLocalQueryStore()
+	configureSharedQueryStore()
 	printVersion()
+}
+
+// configureSharedQueryStore wires up the team-shared query store. It never
+// fails startup: the store loads lazily on first use, so an unreachable
+// Cloudflare API degrades the Saved Queries tab instead of taking down the
+// database browser, which is what pgweb is actually here for.
+func configureSharedQueryStore() {
+	account := options.SharedQueriesKVAccount
+	namespace := options.SharedQueriesKVNamespace
+	token := options.SharedQueriesKVToken
+
+	// Nothing configured at all is the local development case, so fall back to
+	// an in-memory store to keep the feature exercisable. Partial config is
+	// treated as a mistake rather than a fallback: silently keeping shared
+	// queries in memory in a deployed task would quietly lose them on the next
+	// deploy, which is the exact problem this feature exists to solve.
+	if account == "" && namespace == "" && token == "" {
+		logger.Warn("shared queries: Cloudflare KV is not configured, keeping shared queries in memory only (they will be lost on restart)")
+		api.SharedQueryStore = sharedqueries.NewStore(&sharedqueries.Memory{})
+		return
+	}
+
+	backend, err := sharedqueries.NewCloudflareKV(account, namespace, token, options.SharedQueriesKVKey)
+	if err != nil {
+		logger.Errorf("shared queries disabled: %v", err)
+		return
+	}
+
+	logger.Infof("shared queries: using %s", backend)
+	api.SharedQueryStore = sharedqueries.NewStore(backend)
 }
 
 func configureLocalQueryStore() {

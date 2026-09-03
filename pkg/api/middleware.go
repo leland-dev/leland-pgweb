@@ -57,6 +57,17 @@ func corsMiddleware() gin.HandlerFunc {
 	}
 }
 
+func requireSharedQueries() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if SharedQueryStore == nil {
+			badRequest(c, "shared queries are disabled")
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func requireLocalQueries() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if QueryStore == nil {

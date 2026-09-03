@@ -66,6 +66,14 @@ type Options struct {
 	MetricsEnabled               bool   `long:"metrics" description:"Enable Prometheus metrics endpoint"`
 	MetricsPath                  string `long:"metrics-path" description:"Path prefix for Prometheus metrics endpoint" default:"/metrics"`
 	MetricsAddr                  string `long:"metrics-addr" description:"Listen host and port for Prometheus metrics server"`
+
+	// Shared queries are persisted in a Cloudflare Workers KV namespace so they
+	// survive the ECS task being replaced. The feature stays off unless all
+	// three values are provided; see pkg/sharedqueries.
+	SharedQueriesKVAccount   string `long:"shared-queries-kv-account" description:"Cloudflare account ID holding the shared queries KV namespace"`
+	SharedQueriesKVNamespace string `long:"shared-queries-kv-namespace" description:"Cloudflare Workers KV namespace ID for shared queries"`
+	SharedQueriesKVToken     string `long:"shared-queries-kv-token" description:"Cloudflare API token with Workers KV write access"`
+	SharedQueriesKVKey       string `long:"shared-queries-kv-key" description:"Key name the shared queries list is stored under" default:"saved_queries"`
 }
 
 var Opts Options
@@ -183,6 +191,19 @@ func ParseOptions(args []string) (Options, error) {
 		opts.BookmarksDir = getPrefixedEnvVar("BOOKMARKS_DIR")
 	}
 
+	if opts.SharedQueriesKVAccount == "" {
+		opts.SharedQueriesKVAccount = getPrefixedEnvVar("SHARED_QUERIES_KV_ACCOUNT")
+	}
+	if opts.SharedQueriesKVNamespace == "" {
+		opts.SharedQueriesKVNamespace = getPrefixedEnvVar("SHARED_QUERIES_KV_NAMESPACE")
+	}
+	if opts.SharedQueriesKVToken == "" {
+		opts.SharedQueriesKVToken = getPrefixedEnvVar("SHARED_QUERIES_KV_TOKEN")
+	}
+	if opts.SharedQueriesKVKey == "" {
+		opts.SharedQueriesKVKey = getPrefixedEnvVar("SHARED_QUERIES_KV_KEY")
+	}
+
 	homePath, err := homedir.Dir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[WARN] can't detect home dir: %v", err)
@@ -246,5 +267,8 @@ func AvailableEnvVars() string {
 		"  " + envVarPrefix + "AUTH_USER     HTTP basic auth username",
 		"  " + envVarPrefix + "AUTH_PASS     HTTP basic auth password",
 		"  " + envVarPrefix + "BOOKMARKS_DIR Overrides default directory for bookmark files",
+		"  " + envVarPrefix + "SHARED_QUERIES_KV_ACCOUNT   Cloudflare account ID for shared queries",
+		"  " + envVarPrefix + "SHARED_QUERIES_KV_NAMESPACE Cloudflare KV namespace ID for shared queries",
+		"  " + envVarPrefix + "SHARED_QUERIES_KV_TOKEN     Cloudflare API token with Workers KV write access",
 	}, "\n")
 }

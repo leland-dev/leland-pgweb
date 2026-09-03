@@ -30,6 +30,7 @@
         <li id="table_constraints">Constraints</li>
         <li id="table_query" class="selected">Query</li>
         <li id="table_history">History</li>
+        <li id="table_saved_queries">Saved Queries</li>
         <li id="table_activity">Activity</li>
         <li id="table_connection">Connection</li>
       </ul>
@@ -90,7 +91,7 @@
           <input type="button" id="save-query" value="Save Query" class="btn btn-sm btn-default" />
           <div id="saved-query-dropdown" class="btn-group left" style="display: none">
             <button id="saved-queries" type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
-              Saved <span class="caret"></span>
+              Local Saved <span class="caret"></span>
             </button>
             <ul class="dropdown-menu" role="menu">
             </ul>
@@ -157,6 +158,26 @@
       </div>
     </div>
   </div>
+
+  <dialog id="save_query_dialog">
+    <form method="dialog">
+      <div class="title">Save Query</div>
+      <div class="fields">
+        <label for="save_query_name">Name</label>
+        <input type="text" class="form-control input-sm" id="save_query_name" autocomplete="off" placeholder="Active users last 30 days" />
+        <div class="field-note" id="save_query_name_note"></div>
+
+        <label for="save_query_contributor">Contributor</label>
+        <input type="text" class="form-control input-sm" id="save_query_contributor" autocomplete="off" placeholder="Your name" />
+        <div class="field-note" id="save_query_contributor_note">Required to save a query for the team.</div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn btn-sm btn-default" id="save_query_cancel">Cancel</button>
+        <button type="button" class="btn btn-sm btn-default" id="save_query_shared">Save Shared</button>
+        <button type="button" class="btn btn-sm btn-primary" id="save_query_local">Save Local</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="content_modal">
     <div class="title">

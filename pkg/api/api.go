@@ -20,6 +20,7 @@ import (
 	"github.com/sosedoff/pgweb/pkg/metrics"
 	"github.com/sosedoff/pgweb/pkg/queries"
 	"github.com/sosedoff/pgweb/pkg/shared"
+	"github.com/sosedoff/pgweb/pkg/sharedqueries"
 	"github.com/sosedoff/pgweb/static"
 )
 
@@ -32,6 +33,10 @@ var (
 
 	// QueryStore reads the SQL queries stores in the home directory
 	QueryStore *queries.Store
+
+	// SharedQueryStore holds the queries the team has shared with each other.
+	// Nil when the feature is not configured.
+	SharedQueryStore *sharedqueries.Store
 )
 
 // DB returns a database connection from the client context
@@ -605,9 +610,27 @@ func GetInfo(c *gin.Context) {
 			"session_lock":   command.Opts.LockSession,
 			"query_timeout":  command.Opts.QueryTimeout,
 			"local_queries":  QueryStore != nil,
+			"shared_queries": SharedQueryStore != nil,
 			"bookmarks_only": command.Opts.BookmarksOnly,
 		},
 	})
+}
+
+// GetSharedQueries renders the list of queries shared by the team
+func GetSharedQueries(c *gin.Context) {
+	list, err := SharedQueryStore.List()
+	serveResult(c, list, err)
+}
+
+// CreateSharedQuery saves a query into the shared, persistent store, replacing
+// any existing query that has the same name.
+func CreateSharedQuery(c *gin.Context) {
+	query, err := SharedQueryStore.Upsert(sharedqueries.Query{
+		Name:        c.Request.FormValue("name"),
+		Query:       c.Request.FormValue("query"),
+		Contributor: c.Request.FormValue("contributor"),
+	})
+	serveResult(c, query, err)
 }
 
 // DataExport performs database table export

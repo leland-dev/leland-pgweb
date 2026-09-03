@@ -100,6 +100,46 @@ Or set environment variable:
 PGWEB_SESSIONS=1 pgweb
 ```
 
+### Saved and shared queries
+
+The Query tab can save a query two ways:
+
+- **Save Local** keeps it in the browser's `localStorage`, listed under the
+  **Local Saved** dropdown. Private to that browser; this is upstream behavior.
+- **Save Shared** stores it server-side so the whole team sees it in the
+  **Saved Queries** tab. Requires a contributor name.
+
+Shared queries persist in a Cloudflare Workers KV namespace, which is what makes
+them survive the ECS task being replaced on each deploy — the container has no
+durable disk, and the database pgweb browses is read-only. The full list is kept
+in memory and written through to KV on every save, so KV's eventual consistency
+never shows up in the UI. That relies on pgweb running as a single task; with
+more than one replica, reads would have to go to KV directly.
+
+Configure it with three values (flags or env vars):
+
+```
+PGWEB_SHARED_QUERIES_KV_ACCOUNT    Cloudflare account ID
+PGWEB_SHARED_QUERIES_KV_NAMESPACE  Workers KV namespace ID
+PGWEB_SHARED_QUERIES_KV_TOKEN      API token with Workers KV Storage:Edit
+```
+
+The API token is the only credential involved; there is no AWS SDK or request
+signing in the binary. Set all three or none:
+
+- **None set** — pgweb keeps shared queries in memory and logs a warning. This
+  is the local development default, so the tab and both save buttons work
+  without Cloudflare credentials; anything saved is lost on restart.
+- **Partially set** — the feature is disabled and an error is logged, rather
+  than silently falling back to memory and losing the team's queries on the
+  next deploy.
+
+The store loads lazily on first use, so an unreachable Cloudflare API degrades
+the Saved Queries tab instead of blocking startup.
+
+To remove a shared query, delete or edit the `saved_queries` key in the KV
+namespace (Cloudflare dashboard or `wrangler`); there is no delete in the UI yet.
+
 ## Testing
 
 Before running tests, make sure you have PostgreSQL server running on `localhost:5432`
